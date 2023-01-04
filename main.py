@@ -1,6 +1,6 @@
 from numpy import loadtxt
 from argparse import ArgumentParser
-from src import Detector, ConGraph
+from rspyd import Detector, ConGraph
 import open3d as o3d
 import copy
 import numpy as np
