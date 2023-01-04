@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
 import math
+from .Utils import rspyd_norm
 
 
 class Rect3d:
@@ -29,7 +30,7 @@ class Rect3d:
         return closest
 
     def distance_to_point(self, point):
-        return np.linalg.norm(point - self.closest_to_point(point))
+        return rspyd_norm(point - self.closest_to_point(point))
 
 
 class Rect:

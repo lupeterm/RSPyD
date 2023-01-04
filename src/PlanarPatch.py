@@ -3,7 +3,7 @@ from .StatisticsUtils import StatisticSUtils
 import open3d as o3d
 import numpy as np
 from .Plane import Plane
-from scipy.linalg import orth
+from .Utils import rspyd_dot, rspyd_norm, rspyd_orthogonal_base
 from .Rect import Rect3d, Rect
 import copy
 
@@ -22,7 +22,7 @@ class PlanarPatch:
             self._point_cloud.points), self.points, axis=0)
         self._stat_utils = stat_utils
         self._original_size = self.get_size()
-        self._plane = Plane()
+        self.plane = Plane()
         self._outlier_ratio = outlier_ratio
         self._outliers: Dict[int, bool] = {}
         self._num_new_points = 0
@@ -54,17 +54,14 @@ class PlanarPatch:
         maxs = np.max(self.pts, axis=0)
         return Rect3d(mins, maxs)
 
-    def plane(self) -> Plane:
-        return self._plane
-
     def get_plane(self) -> Plane:
         center = np.partition(self.pts, axis=0, kth=len(self.pts)//2)[len(self.pts)//2]
         normal = np.partition(self.normals, axis=0, kth=len(self.normals)//2)[len(self.normals)//2]
-        normal = normal / np.linalg.norm(normal)
+        normal = rspyd_norm(normal)
         return Plane(center, normal)
 
     def is_planar(self) -> bool:
-        self._plane = self.get_plane()
+        self.plane = self.get_plane()
         self._min_normal_diff = self.get_min_normal_diff()
         if not self.is_normal_valid():
             return False
@@ -93,7 +90,7 @@ class PlanarPatch:
 
     def get_min_normal_diff(self):
         self._stat_utils.size(len(self.points))
-        pn = self._plane.normal
+        pn = self.plane.normal
         for i, normal in enumerate(self.normals):
             self._stat_utils.databuffer[i] = abs(normal[0]*pn[0] + normal[1]*pn[1] + normal[2]*pn[2])
         min, _ = self._stat_utils.get_min_max_R(3)
@@ -105,23 +102,16 @@ class PlanarPatch:
     def get_max_plane_dist(self):
         self._stat_utils.size(len(self.points))
         for i, point in enumerate(self.pts):
-            self._stat_utils.databuffer[i] = abs(self._plane.get_signed_dist_from_surface(point))
+            self._stat_utils.databuffer[i] = abs(self.plane.get_signed_dist_from_surface(point))
         _, max = self._stat_utils.get_min_max_R(3)
         return max
 
     def is_dist_valid(self) -> bool:
-        n = self.plane().normal
-        base_u = np.array([n[1]-n[2], -n[0], n[0]])
-        base_u = base_u / np.linalg.norm(base_u)
-        # base_v = np.cross(n, base_u)
-        base_v = np.array([
-            n[1]*base_u[2]-n[2]*base_u[1],
-            n[2]*base_u[0]-n[0]*base_u[2],
-            n[0]*base_u[1]-n[1]*base_u[0]])
-        base_v = base_v / np.linalg.norm(base_v)
+        n = self.plane.normal
+        base_u, base_v = rspyd_orthogonal_base(n)
         extreme = base_u * self._original_size + n * self._max_dist_plane
-        extreme_n = extreme / np.linalg.norm(extreme)
-        a = abs(extreme_n[0] * self._plane.normal[0] + extreme_n[1] * self._plane.normal[1] + extreme_n[2] * self._plane.normal[2]) 
+        extreme_n = rspyd_norm(extreme)
+        a = abs(rspyd_dot(n,extreme_n))
         return a < self._max_allowed_distance
 
     def remove_outliers(self):
@@ -139,11 +129,10 @@ class PlanarPatch:
         return self.stable
 
     def is_inlier(self, point: int):
-        # a = abs(np.dot(self._plane.normal, self._point_cloud.normals[point])) > self._min_normal_diff
-        n = self._plane.normal
+        n = self.plane.normal
         p = self._point_cloud.normals[point]
-        d = abs(n[0]*p[0] + n[1]*p[1] + n[2]*p[2])
-        return d > self._min_normal_diff and self._max_dist_plane > d + self._plane._distance_origin
+        d = abs(rspyd_dot(n,p))
+        return d > self._min_normal_diff and self._max_dist_plane > d + self.plane._distance_origin
 
     def visit(self, point: int) -> None:
         if len(self._visited) > 0:
@@ -165,7 +154,7 @@ class PlanarPatch:
         self.index = index
 
     def update_plane(self):
-        self._plane = self.get_plane()
+        self.plane = self.get_plane()
         self._visited_set = set()
         if self.num_updates > 1:
             self.used_visited2 = True

@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List
 import open3d as o3d
-
+from .Utils import rspyd_dot, rspyd_norm,rspyd_cross
 
 class Plane:
     def __init__(self, center=None, normal=None, basis_u=np.zeros(3), basis_v=np.zeros(3)) -> None:
@@ -14,7 +14,7 @@ class Plane:
         else:
             self.normal = np.ones(3)
         self.inliers: List[int] = []
-        self._distance_origin = -np.dot(self.normal, self.center)
+        self._distance_origin = -rspyd_dot(self.normal, self.center)
         self.basis_u = basis_u
         self.basis_v = basis_v
         self.inlier = []
@@ -36,11 +36,11 @@ class Plane:
         https://stackoverflow.com/questions/45142959/calculate-rotation-matrix-to-align-two-vectors-in-3d-space
         """
         origin = np.array([0, 1, 0])
-        norm_normal = self.normal / np.linalg.norm(self.normal)
-        v = np.cross(origin, norm_normal)
-        c = np.dot(origin, norm_normal)
-        s = np.linalg.norm(v)
+        norm_normal = rspyd_norm(self.normal)
+        v = rspyd_cross(origin, norm_normal)
+        c = rspyd_dot(origin, norm_normal)
+        s = rspyd_norm(v)
         kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
         rotation_matrix = np.eye(3) + kmat + \
-            kmat.dot(kmat) * ((1 - c) / (s ** 2))
+            rspyd_dot(kmat,kmat) * ((1 - c) / (s ** 2))
         return rotation_matrix

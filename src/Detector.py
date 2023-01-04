@@ -12,6 +12,7 @@ from .Plane import Plane
 from .Rect import Rect, Rect3d
 from .StatisticsUtils import StatisticSUtils
 from .UnionFind import UnionFind
+from .Utils import rspyd_dot, bench, rspyd_orthogonal_base
 
 
 class IndexedPoint2d:
@@ -35,6 +36,7 @@ class Detector:
         self._max_distance = max_distance
         self._max_outlier_ratio = min_inlier_ratio
 
+    @bench
     def detect(self) -> Set[Plane]:
         planes: Set[Plane] = set()
 
@@ -77,7 +79,7 @@ class Detector:
         patches = true_positive_patches
 
         for patch in patches:
-            plane = patch.plane()
+            plane = patch.plane
             plane.inliers = patch.points
             planes.add(plane)
         return planes
@@ -202,7 +204,7 @@ class Detector:
                 for neighbor in self.connectivity.get_neighbors(point)[:-1]:
                     if self._removed[neighbor] or self._patch_points[neighbor] != None or (not relaxed and patch.is_visited(neighbor)):
                         continue
-                    if (not relaxed and patch.is_inlier(neighbor)) or (relaxed and (abs(patch.plane().get_signed_dist_from_surface(self.cloud.points[neighbor])) < patch._max_dist_plane)):
+                    if (not relaxed and patch.is_inlier(neighbor)) or (relaxed and (abs(patch.plane.get_signed_dist_from_surface(self.cloud.points[neighbor])) < patch._max_dist_plane)):
                         queue.append(neighbor)
                         patch.add_point(neighbor)
                         self._patch_points[neighbor] = patch
@@ -221,8 +223,8 @@ class Detector:
                 # check patch normal deviation
                 normal_th = min(p._min_normal_diff,
                                 patches[j]._min_normal_diff)
-                pp = p._plane
-                pj = patches[j]._plane
+                pp = p.plane
+                pj = patches[j].plane
                 d = abs(pp.normal[0] * pj.normal[0] + pp.normal[1] *
                         pj.normal[1] + pp.normal[2] * pj.normal[2]) < normal_th
                 disconnected_patches[i*n+j] = disconnected_patches[j*n+i] = d
@@ -244,8 +246,8 @@ class Detector:
                     patch.visit(neighbor)
                     neighbor_patch.visit(point)
                     p1 = self.cloud.points[point]
-                    pp = patch._plane
-                    pn = neighbor_patch._plane
+                    pp = patch.plane
+                    pn = neighbor_patch.plane
                     p1_n = self.cloud.normals[point]
                     p2 = self.cloud.points[neighbor]
                     p2_n = self.cloud.normals[neighbor]
@@ -297,12 +299,8 @@ class Detector:
 
     def delimit_plane(self, patch: PlanarPatch) -> None:
         outlier = self.get_plane_outlier(patch)
-        n = patch.plane().normal
-        # FIXME orthogonalbasis auslagern somewhere
-        base_u = np.array([n[1]-n[2], -n[0], n[0]])
-        base_u = base_u / np.linalg.norm(base_u)
-        base_v = np.cross(n, base_u)
-        base_v = base_v / np.linalg.norm(base_v)
+        n = patch.plane.normal
+        base_u,base_v = rspyd_orthogonal_base(n)
         basis = np.zeros((3, 3))
         for dim in range(3):
             basis[0, dim] = base_u[dim]
@@ -333,22 +331,17 @@ class Detector:
             else:
                 min_angle = mid
         patch.rect = Rect(matrix, basis, (min_angle+max_angle)/2)
-        center = patch.plane().center
+        center = patch.plane.center
         min_basis_u = patch.rect.basis[0]
         min_basis_v = patch.rect.basis[1]
-        center -= min_basis_u * np.dot(min_basis_u, center)
-        center -= min_basis_v * np.dot(min_basis_v, center)
-        center += min_basis_u * \
-            (patch.rect.rect.bottom_left[0] + patch.rect.rect.top_right[0]) / 2
-        center += min_basis_v * \
-            (patch.rect.rect.bottom_left[1] + patch.rect.rect.top_right[1]) / 2
-        length_u = (
-            patch.rect.rect.top_right[0] - patch.rect.rect.bottom_left[0] / 2)
-        length_v = (
-            patch.rect.rect.top_right[1] - patch.rect.rect.bottom_left[1] / 2)
-        new_plane = Plane(center, patch.plane().normal,
-                          min_basis_u * length_u, min_basis_v*length_v)
-        patch._plane = new_plane
+        center -= min_basis_u * rspyd_dot(min_basis_u, center)
+        center -= min_basis_v * rspyd_dot(min_basis_v, center)
+        center += min_basis_u * (patch.rect.rect.bottom_left[0] + patch.rect.rect.top_right[0]) / 2
+        center += min_basis_v * (patch.rect.rect.bottom_left[1] + patch.rect.rect.top_right[1]) / 2
+        length_u = (patch.rect.rect.top_right[0] - patch.rect.rect.bottom_left[0] / 2)
+        length_v = (patch.rect.rect.top_right[1] - patch.rect.rect.bottom_left[1] / 2)
+        new_plane = Plane(center, patch.plane.normal,min_basis_u * length_u, min_basis_v*length_v)
+        patch.plane = new_plane
 
     def is_false_positive(self, patch: PlanarPatch) -> bool:
         a = patch.num_updates == 0
@@ -359,29 +352,9 @@ class Detector:
     def is_removed(self, point: int):
         return self._removed[point]
 
-    def get_plane_outlier(self, patch: PlanarPatch) -> List[int]:
-        # NOTE  die offizielle implementierung reduziert das problem auf den 2D fall und berechnet die CH
-        # python hat scipy, ist langsamer, dafür aber einfacher zu lesen/maintainen:
-        # calculate Delaunay triangulation for ez outlier detection
-        # if len(patch.pts) != len(patch.points):
-        #     patch.pts = np.take(np.asarray(self.cloud.points),
-        #                      patch.points, axis=0)
-        # if len(patch.pts) > 4:
-        #     triang = Delaunay(patch.pts, qhull_options='QJ')
-        #     outlier_mask = triang.find_simplex(patch.pts)+1
-        #     outlier_mask = outlier_mask.astype(bool) ^ True  # invert Trues and Falses
-        #     return np.array(patch.points)[outlier_mask]
-        n = patch._plane.normal
-        # FIXME orthogonalbasis auslagern somewhere
-        base_u = [n[1]-n[2], -n[0], n[0]]
-        base_u = base_u / np.sqrt(base_u[0]**2 + base_u[1]**2+ base_u[2]**2)
-        # manual cross product is faster than numpy function
-        base_v = [
-            n[1]*base_u[2] - n[2]*base_u[1],
-            n[2]*base_u[0] - n[0]*base_u[2],
-            n[0]*base_u[1] - n[1]*base_u[0],
-            ]
-        base_v = base_v / np.sqrt(base_v[0]**2 + base_v[1]**2+ base_v[2]**2)
+    def get_plane_outlier(self, patch: PlanarPatch) -> List[int]:        
+        n = patch.plane.normal
+        base_u, base_v = rspyd_orthogonal_base(n)
         projected_points = np.zeros((len(patch.points),2))
         for i, point in enumerate(patch.points):
             pos = self.cloud.points[point]
@@ -394,11 +367,8 @@ class Detector:
         return outliers
 
     def project_onto_orthogonal_basis(self, vector, b_u, b_v):
-        # FIXME auslagern in andere classe
-        # alpha = np.dot(vector, b_u)
-        # beta = np.dot(vector, b_v)
-        alpha = vector[0]*b_u[0] + vector[1]*b_u[1] + vector[2]*b_u[2]
-        beta = vector[0]*b_v[0] + vector[1]*b_v[1] + vector[2]*b_v[2]
+        alpha = rspyd_dot(vector, b_u)
+        beta = rspyd_dot(vector, b_v)
         return alpha,beta
 
     def convex_hull(self, points) -> List[int]:
