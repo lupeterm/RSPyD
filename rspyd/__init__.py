@@ -1,3 +1,4 @@
-from .ConnectivityGraph import ConnectivityGraph as ConGraph
-from .Detector import Detector
-from .Octree import Octree
+from rspyd.ConnectivityGraph import ConnectivityGraph
+from rspyd.Detector import Detector
+from rspyd.Octree import Octree
+import rspyd.io

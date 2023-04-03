@@ -24,8 +24,8 @@ class IndexedPoint2d:
 class Detector:
     def __init__(self, point_cloud: o3d.geometry.PointCloud, connectivity:  ConnectivityGraph) -> None:
         self.cloud = point_cloud
-        self._min_normal_diff = math.cos(math.radians(60.0))
-        self._max_distance = math.cos(math.radians(75.0))
+        self._min_normal_diff = math.cos(math.radians(85.0))
+        self._max_distance = math.cos(math.radians(70.0))
         # NOTE semantically:  "max 25% are outliers"
         self._max_outlier_ratio = 0.75
         self.connectivity = connectivity
@@ -36,7 +36,7 @@ class Detector:
         self._max_distance = max_distance
         self._max_outlier_ratio = min_inlier_ratio
 
-    @bench
+    # @bench
     def detect(self) -> Set[Plane]:
         planes: Set[Plane] = set()
 
