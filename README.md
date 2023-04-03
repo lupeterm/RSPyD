@@ -10,11 +10,10 @@ I am not affiliated with the authors.
 This python project depends on Open3D, NumPy, and SciPy.
 
 To install, clone the repository and install using setuptools:
-
-    ```
-        git clone git@github.com:lupeterm/RSPyD.git
-        python setup.py install
-    ```
+```
+git clone git@github.com:lupeterm/RSPyD.git
+python setup.py install
+```
 
 ## Usage
 
